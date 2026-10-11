@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HENDY STUDIO - ADMINI CLOUD</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-8">
+
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-blue-400 mb-2">☁️ HENDY-ADMINI EDGE CLOUD</h1>
+        <p class="text-gray-400 mb-8">Trình tạo Kiến trúc & Sinh mã tự động (Serverless Web App)</p>
+
+        <div class="bg-gray-800 p-6 rounded-lg border border-gray-700 shadow-lg">
+            <h2 class="text-xl font-semibold text-green-400 mb-4">🚀 Trình Tạo Tự Động Từ Sơ Đồ (Diagram Builder)</h2>
+            <p class="text-sm text-gray-400 mb-2">Dán sơ đồ cây (dạng text) vào đây. Hệ thống sẽ đóng gói thành file ZIP kèm mã nguồn viết sẵn dựa trên AI Logic.</p>
+            
+            <textarea id="diagramInput" class="w-full h-80 bg-gray-950 text-green-300 font-mono text-sm p-4 rounded border border-gray-600 focus:outline-none focus:border-green-500" placeholder="apps/
+├── admin-web/
+│   ├── package.json
+│   └── Dockerfile
+└── api-server/
+    └── routes/
+        └── auth.js"></textarea>
+            
+            <button onclick="generateDiagram()" class="mt-6 w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 px-4 rounded transition text-lg shadow-lg">
+                ⚡ KHỞI TẠO VÀ TẢI XUỐNG ZIP
+            </button>
+            
+            <div id="diagramLogs" class="mt-4 text-sm text-gray-300 bg-gray-900 p-4 rounded hidden border border-gray-700"></div>
+        </div>
+    </div>
+
+    <script>
+        async function generateDiagram() {
+            const diagram = document.getElementById('diagramInput').value;
+            const logBox = document.getElementById('diagramLogs');
+            
+            if (!diagram) return alert("Vui lòng dán sơ đồ vào ô!");
+
+            logBox.style.display = 'block';
+            logBox.innerHTML = '<span class="text-yellow-400 animate-pulse">⏳ Đang phân tích sơ đồ, sinh mã nguồn và đóng gói ZIP trên Cloudflare Edge...</span>';
+
+            try {
+                // Gọi API backend trên Cloudflare Functions
+                const res = await fetch('/api/generate-from-diagram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ diagram })
+                });
+
+                if (!res.ok) {
+                    const errData = await res.json();
+                    throw new Error(errData.error || "Có lỗi xảy ra trên máy chủ!");
+                }
+
+                // Chuyển đổi dữ liệu trả về thành Blob (File nhị phân ZIP)
+                const blob = await res.blob();
+                
+                // Trình duyệt tự động tải xuống
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'Hendy-Architecture.zip';
+                document.body.appendChild(a);
+                a.click();
+                
+                // Dọn dẹp bộ nhớ
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                logBox.innerHTML = '<span class="text-green-400 font-bold">✅ HOÀN TẤT! File [Hendy-Architecture.zip] đã được tải xuống máy của bạn!</span>';
+            } catch (error) {
+                logBox.innerHTML = `<span class="text-red-400">❌ Lỗi: ${error.message}</span>`;
+            }
+        }
+    </script>
+</body>
+</html>
