@@ -1,0 +1,94 @@
+import JSZip from 'jszip';
+
+// =====================================================================
+// BỘ MÁY SINH MÃ THÔNG MINH (Chạy trên Edge Cloudflare)
+// =====================================================================
+function generateSmartContent(fullPath, fileName) {
+    const lowerName = fileName.toLowerCase();
+    const parts = fullPath.split('/');
+    const folderName = parts.length > 1 ? parts[parts.length - 2] : 'project';
+
+    if (lowerName === 'package.json') {
+        return JSON.stringify({
+            name: folderName, version: "1.0.0", main: "index.js",
+            scripts: { "start": "node index.js" }, dependencies: {}
+        }, null, 2);
+    }
+    if (lowerName === 'dockerfile') {
+        return `FROM node:18-alpine\nWORKDIR /app\nCOPY package*.json ./\nRUN npm install\nCOPY . .\nEXPOSE 3000\nCMD ["npm", "start"]`;
+    }
+    if (lowerName === 'docker-compose.yml') {
+        return `version: '3.8'\nservices:\n  ${folderName}-app:\n    build: .\n    ports:\n      - "3000:3000"`;
+    }
+    if (lowerName.endsWith('.tsx') || lowerName.endsWith('.jsx')) {
+        const compName = fileName.split('.')[0];
+        const capitalized = compName.charAt(0).toUpperCase() + compName.slice(1);
+        return `import React from 'react';\n\nexport default function ${capitalized}() {\n  return (\n    <div className="p-4">\n      <h1 className="text-xl font-bold">Component: ${capitalized}</h1>\n      <p>Tự động sinh bởi Hendy Cloudflare Edge</p>\n    </div>\n  );\n}`;
+    }
+    if (['.js', '.ts', '.py', '.kt', '.go', '.java', '.sql'].some(ext => lowerName.endsWith(ext))) {
+        const commentSyntax = lowerName.endsWith('.py') || lowerName.endsWith('.sql') ? '--' : '//';
+        return `${commentSyntax} ==========================================\n${commentSyntax} File: ${fileName}\n${commentSyntax} Tự động sinh bởi Hendy Cloudflare Edge\n${commentSyntax} ==========================================\n\n`;
+    }
+    return ``; 
+}
+// =====================================================================
+
+// Xử lý POST request từ Frontend gửi lên Cloudflare Pages
+export async function onRequestPost(context) {
+    try {
+        const { request } = context;
+        const { diagram } = await request.json();
+
+        const zip = new JSZip();
+        const lines = diagram.split('\n');
+        let pathStack = [{ depth: -1, path: '' }]; 
+
+        lines.forEach(line => {
+            if (!line.trim()) return;
+            const prefixMatch = line.match(/^[\s│├└─]*/);
+            const depth = Math.floor((prefixMatch ? prefixMatch[0].length : 0) / 4); 
+            const rawName = line.replace(/^[\s│├└─]*/, '').trim();
+            if (!rawName) return;
+
+            while (pathStack.length > 0 && pathStack[pathStack.length - 1].depth >= depth) {
+                pathStack.pop();
+            }
+
+            const parentPath = pathStack[pathStack.length - 1].path;
+            const name = rawName.split(' #')[0].trim(); 
+
+            // Phân biệt Thư mục và File
+            if (name.endsWith('/') || (!name.includes('.') && !name.includes('#'))) {
+                let cleanName = name.replace(/\/$/, '');
+                let dirPath = parentPath ? `${parentPath}/${cleanName}` : cleanName;
+                
+                zip.folder(dirPath); // Tạo Folder bên trong bộ nhớ ZIP
+                pathStack.push({ depth, path: dirPath });
+            } else {
+                let filePath = parentPath ? `${parentPath}/${name}` : name;
+                
+                // Viết code tự động dựa trên tên file
+                const autoCode = generateSmartContent(filePath, name);
+                zip.file(filePath, autoCode); // Đưa file vào thư mục ZIP
+            }
+        });
+
+        // Đóng gói toàn bộ cấu trúc thành mảng nhị phân uint8 (chuẩn cho Cloudflare)
+        const zipContent = await zip.generateAsync({ type: "uint8array" });
+
+        // Trả file ZIP về cho Frontend tải xuống
+        return new Response(zipContent, {
+            headers: {
+                "Content-Type": "application/zip",
+                "Content-Disposition": "attachment; filename=\"Hendy-Architecture.zip\"",
+                "Access-Control-Allow-Origin": "*"
+            }
+        });
+
+    } catch (error) {
+        return new Response(JSON.stringify({ success: false, error: error.message }), {
+            status: 500,
+            headers: { "Content-Type": "application/json" }
+        });
+    }
+}
